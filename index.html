@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Memory Mosaic — RCA Campus Traces</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section id="index-view" class="index-view" aria-label="Archive index">
+    <header class="index-header">
+      <p class="index-title">TRACES ARCHIVE</p>
+      <p class="index-metadata">RCA 2026/27</p>
+    </header>
+
+    <nav id="index-entries" class="index-entries" aria-label="Archive entries"></nav>
+
+    <img id="index-preview" class="index-preview" alt="" aria-hidden="true">
+  </section>
+
+  <main id="trace-view" class="archive" aria-hidden="true" hidden>
+    <header class="masthead">
+      <a class="wordmark" href="#" aria-label="Memory Mosaic home">Traces Archive in RCA (temporary)</a>
+      <span class="collection">what remains in RCA campus?</span>
+    </header>
+
+    <section class="trace" aria-labelledby="trace-title">
+      <div class="trace-heading">
+        <h1 id="trace-title"></h1>
+        <span class="trace-date"></span>
+        <button id="back-to-index" class="small-button back-to-index" type="button">Back to Index</button>
+      </div>
+
+      <div class="canvas-frame">
+        <canvas id="trace-canvas" aria-label="Paint over campus traces to see them mosaic and fade"></canvas>
+        <div class="edit-toolbar">
+          <button id="edit-button" class="small-button" type="button">Brush Traces</button>
+          <div id="edit-tools" class="edit-tools" hidden>
+            <label class="brush-control" for="brush-size">
+              <span>BRUSH</span>
+              <input id="brush-size" type="range" min="4" max="80" value="28" aria-label="Brush size">
+            </label>
+            <button id="erase-button" class="small-button" type="button" aria-pressed="false">Erase Brush</button>
+            <button id="clear-mask-button" class="small-button" type="button">Clear All</button>
+            <button id="done-button" class="small-button" type="button">Done</button>
+          </div>
+        </div>
+        <p id="clean-plate-note" class="clean-plate-note" role="status"></p>
+        <p id="image-error" class="image-error" role="alert" hidden></p>
+      </div>
+
+      <div class="controls">
+        <div class="control-topline">
+          <span class="timeline-label">TRACE TIMELINE <span id="time-readout">00:00</span> / 00:08</span>
+          <span class="status"><span id="status-dot" class="status-dot"></span><span id="status-label">CLEAR</span></span>
+        </div>
+        <div class="control-row">
+          <button id="play-button" class="play-button" type="button" aria-pressed="false">Play</button>
+          <input id="scrubber" type="range" min="0" max="8000" step="1" value="0" aria-label="Scrub trace timeline">
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>ROYAL COLLEGE OF ART</span>
+      <span>MEMORY, HELD IN FRAGMENTS</span>
+    </footer>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
