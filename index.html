@@ -13,14 +13,24 @@
       <p class="index-metadata">RCA 2026/27</p>
     </header>
 
-    <nav id="index-entries" class="index-entries" aria-label="Archive entries"></nav>
+    <div class="index-directory">
+      <button id="upload-button" class="index-upload" type="button" aria-controls="upload-input">
+        <span class="index-upload-icon" aria-hidden="true">+</span>
+        <span>UPLOAD YOUR TRACE</span>
+      </button>
+      <input id="upload-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+      <p id="upload-status" class="upload-status" role="alert" hidden></p>
+      <nav id="index-entries" class="index-entries" aria-label="Archive entries">
+        <div id="index-entry-track" class="index-entry-track"></div>
+      </nav>
+    </div>
 
     <img id="index-preview" class="index-preview" alt="" aria-hidden="true">
   </section>
 
   <main id="trace-view" class="archive" aria-hidden="true" hidden>
     <header class="masthead">
-      <a class="wordmark" href="#" aria-label="Memory Mosaic home">Traces Archive in RCA (temporary)</a>
+      <a class="wordmark" href="#" aria-label="Memory Mosaic home">Traces Archive in RCA</a>
       <span class="collection">what remains in RCA campus?</span>
     </header>
 

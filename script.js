@@ -27,6 +27,10 @@ const editToolbar = document.querySelector(".edit-toolbar");
 const indexView = document.querySelector("#index-view");
 const traceView = document.querySelector("#trace-view");
 const indexEntries = document.querySelector("#index-entries");
+const indexEntryTrack = document.querySelector("#index-entry-track");
+const uploadButton = document.querySelector("#upload-button");
+const uploadInput = document.querySelector("#upload-input");
+const uploadStatus = document.querySelector("#upload-status");
 const indexPreview = document.querySelector("#index-preview");
 const backToIndex = document.querySelector("#back-to-index");
 const traceTitle = document.querySelector("#trace-title");
@@ -47,15 +51,28 @@ const cycleDuration = 8000;
 const segmentDurationSeconds = cycleDuration / 4 / 1000;
 const fineMosaicCssBlockSize = 8;
 const coarseMosaicCssBlockSize = 32;
+const supportedUploadTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const archiveEntriesData = [
   { id: "001", title: "PROPERTY LABEL", imagePath: "trace-01.jpg", location: "WHITE CITY", cleanPlatePath: "trace-01-clean.jpg" },
   { id: "002", title: "NAME FRAGMENTS", imagePath: "trace-02.jpg", location: "BATTERSEA STU.02.001B", cleanPlatePath: "trace-02-clean.jpg" },
   { id: "003", title: "QR CODE", imagePath: "trace-03.jpg", location: "WHITE CITY GH.01", cleanPlatePath: "trace-03-clean.jpg" },
   { id: "004", title: "REMNANT", imagePath: "trace-04.jpg", location: "WHITE CITY GH.01", cleanPlatePath: "trace-04-clean.jpg" },
-  { id: "005", title: "COLLECTIVE MARKINGS", imagePath: "trace-05.jpg", location: "WHITE CITY GH.01", cleanPlatePath: "trace-05-clean.jpg" }
+  { id: "005", title: "COLLECTIVE MARKINGS", imagePath: "trace-05.jpg", location: "WHITE CITY GH.01", cleanPlatePath: "trace-05-clean.jpg" },
+  { id: "006", title: "EVENT POSTER", imagePath: "trace-06.JPG", location: "", cleanPlatePath: "trace-06-clean.JPG" },
+  { id: "007", title: "CAT ZONE DOODLES", imagePath: "trace-07.jpeg", location: "", cleanPlatePath: "trace-07-clean.jpeg" },
+  { id: "008", title: "NAILGUN MARKS", imagePath: "trace-08.jpeg", location: "", cleanPlatePath: "trace-08-clean.jpeg" },
+  { id: "009", title: "HALLOWEEN DECORATION", imagePath: "trace-09.jpeg", location: "", cleanPlatePath: "trace-09-clean.jpeg" },
+  { id: "010", title: "FOLDING PANEL WALL", imagePath: "trace-10.jpeg", location: "", cleanPlatePath: "trace-10-clean.jpeg" }
 ];
+const archiveEntriesById = new Map(archiveEntriesData.map((entry) => [entry.id, entry]));
 const masksByEntry = new Map();
 
+let activeTemporaryUrl = null;
+let temporaryEntrySequence = 0;
+let indexLoopCycleHeight = 0;
+let indexLoopOffset = 0;
+let indexLoopRowUnit = 0;
+let indexLoopSeamGap = 0;
 let playing = false;
 let editing = false;
 let showOriginalOnEntry = true;
@@ -90,27 +107,113 @@ buildIndex();
 setImageUnavailable();
 
 function buildIndex() {
-  const fragment = document.createDocumentFragment();
-  for (const entry of archiveEntriesData) {
-    const button = document.createElement("button");
-    const number = document.createElement("span");
-    const title = document.createElement("span");
-    button.className = "index-entry";
-    button.type = "button";
-    button.setAttribute("aria-controls", "trace-view");
-    button.dataset.entryId = entry.id;
-    number.className = "entry-number";
-    number.textContent = entry.id;
-    title.className = "entry-title";
-    title.textContent = entry.title;
-    button.append(number, title);
-    button.addEventListener("click", () => enterTrace(entry));
-    button.addEventListener("pointerenter", (event) => showIndexPreview(event, entry));
-    button.addEventListener("pointermove", (event) => showIndexPreview(event, entry));
-    button.addEventListener("pointerleave", hideIndexPreview);
-    fragment.append(button);
+  const cycles = [-1, 0, 1].map((cycleIndex) => {
+    const cycle = document.createElement("div");
+    cycle.className = "index-entry-cycle";
+    cycle.dataset.cycleIndex = String(cycleIndex);
+    if (cycleIndex !== 0) cycle.setAttribute("aria-hidden", "true");
+
+    for (const entry of archiveEntriesData) {
+      const button = document.createElement("button");
+      const number = document.createElement("span");
+      const title = document.createElement("span");
+      button.className = "index-entry";
+      button.type = "button";
+      button.setAttribute("aria-controls", "trace-view");
+      button.dataset.entryId = entry.id;
+      if (entry.id === archiveEntriesData[0].id) button.classList.add("index-entry-cycle-start");
+      if (cycleIndex !== 0) button.tabIndex = -1;
+      number.className = "entry-number";
+      number.textContent = entry.id;
+      title.className = "entry-title";
+      title.textContent = entry.title;
+      button.append(number, title);
+      button.addEventListener("click", () => enterTrace(entry));
+      button.addEventListener("pointerenter", (event) => showIndexPreview(event, entry));
+      button.addEventListener("pointermove", (event) => showIndexPreview(event, entry));
+      button.addEventListener("pointerleave", handleIndexEntryPointerLeave);
+      cycle.append(button);
+    }
+
+    return cycle;
+  });
+
+  indexEntryTrack.replaceChildren(...cycles);
+  updateIndexDirectoryLoopLayout();
+}
+
+function normalizeIndexLoopOffset(offset, cycleHeight) {
+  if (cycleHeight <= 0) return 0;
+  return ((offset + cycleHeight / 2) % cycleHeight + cycleHeight) % cycleHeight - cycleHeight / 2;
+}
+
+function applyIndexLoopOffset() {
+  indexEntryTrack.style.transform = `translate3d(0, ${-indexLoopOffset}px, 0)`;
+}
+
+function updateIndexDirectoryLoopLayout() {
+  const centralCycle = indexEntryTrack.querySelector(".index-entry-cycle[data-cycle-index=\"0\"]");
+  if (!centralCycle) return;
+
+  const buttons = Array.from(centralCycle.children);
+  if (!buttons.length) return;
+
+  const naturalHeight = buttons.reduce((height, button) => height + button.getBoundingClientRect().height, 0);
+  const baseCycleHeight = Math.max(indexEntries.clientHeight, naturalHeight);
+  const ordinaryGap = buttons.length > 1
+    ? (baseCycleHeight - naturalHeight) / (buttons.length - 1)
+    : 0;
+  const regularRowStride = naturalHeight / buttons.length + ordinaryGap;
+  const seamGap = regularRowStride * 2;
+  const nextCycleHeight = baseCycleHeight + seamGap;
+  if (indexLoopCycleHeight > 0) {
+    const previousScrollOffset = normalizeIndexLoopOffset(
+      indexLoopOffset - indexLoopSeamGap,
+      indexLoopCycleHeight
+    );
+    indexLoopOffset = normalizeIndexLoopOffset(
+      seamGap + previousScrollOffset * nextCycleHeight / indexLoopCycleHeight,
+      nextCycleHeight
+    );
+  } else {
+    indexLoopOffset = seamGap;
   }
-  indexEntries.replaceChildren(fragment);
+  indexLoopCycleHeight = nextCycleHeight;
+  indexLoopRowUnit = regularRowStride;
+  indexLoopSeamGap = seamGap;
+
+  for (const cycle of indexEntryTrack.children) {
+    const cycleIndex = Number(cycle.dataset.cycleIndex);
+    cycle.style.height = `${nextCycleHeight}px`;
+    cycle.style.top = `${cycleIndex * nextCycleHeight}px`;
+    cycle.style.setProperty("--index-seam-gap", `${seamGap}px`);
+  }
+  applyIndexLoopOffset();
+}
+
+function handleIndexWheel(event) {
+  if (!indexLoopCycleHeight || event.deltaY === 0) return;
+  event.preventDefault();
+
+  let delta = event.deltaY;
+  if (event.deltaMode === 1) delta *= indexLoopRowUnit;
+  if (event.deltaMode === 2) delta *= indexEntries.clientHeight;
+  indexLoopOffset = normalizeIndexLoopOffset(indexLoopOffset + delta, indexLoopCycleHeight);
+  applyIndexLoopOffset();
+}
+
+function handleIndexEntryPointerLeave(event) {
+  const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
+  const hoveredButton = hoveredElement && hoveredElement.closest(".index-entry");
+  const entry = hoveredButton && indexEntries.contains(hoveredButton)
+    ? archiveEntriesById.get(hoveredButton.dataset.entryId)
+    : null;
+
+  if (entry) {
+    showIndexPreview(event, entry);
+  } else {
+    hideIndexPreview();
+  }
 }
 
 function setImageUnavailable() {
@@ -125,6 +228,7 @@ function loadImage(entry) {
   frameRequest = undefined;
   imageReady = false;
   cleanPlateReady = false;
+  cleanPlateImage = new Image();
   mosaicFramesReady = false;
   animationTiles = [];
   animationTilePixels = undefined;
@@ -148,15 +252,27 @@ function loadImage(entry) {
   };
   requestedImage.onerror = (event) => {
     if (loadGeneration !== imageLoadGeneration || activeEntry !== entry) return;
-    console.error(`Unable to load archive image "${entry.imagePath}".`, event);
+    if (entry.isTemporary) {
+      console.error("Unable to load the selected temporary image.", event);
+      errorMessage.textContent = "This image could not be read. Choose a valid JPEG, PNG, or WebP image.";
+      revokeActiveTemporaryUrl();
+    } else {
+      console.error(`Unable to load archive image "${entry.imagePath}".`, event);
+      errorMessage.textContent = `Image unavailable: ${entry.imagePath}`;
+    }
     setImageUnavailable();
-    errorMessage.textContent = `Image unavailable: ${entry.imagePath}`;
     errorMessage.hidden = false;
   };
   requestedImage.src = entry.imagePath;
 }
 
 function loadCleanPlate(entry, loadGeneration) {
+  if (!entry.cleanPlatePath) {
+    cleanPlateReady = false;
+    updateCleanPlateState(entry);
+    return;
+  }
+
   const requestedCleanPlate = new Image();
   cleanPlateImage = requestedCleanPlate;
   requestedCleanPlate.onload = () => {
@@ -174,7 +290,7 @@ function loadCleanPlate(entry, loadGeneration) {
 }
 
 function updateTraceMetadata(entry) {
-  traceTitle.textContent = `${entry.id} — ${entry.title}`;
+  traceTitle.textContent = entry.isTemporary ? entry.title : `${entry.id} — ${entry.title}`;
   traceDate.textContent = entry.location;
 }
 
@@ -202,7 +318,9 @@ function updateCleanPlateState(entry) {
     cleanPlateNote.textContent = `${entry.cleanPlatePath} dimensions must match ${entry.imagePath}.`;
   } else {
     cleanPlateNote.replaceChildren(
-      `Add ${entry.cleanPlatePath} for reliable erasure.`,
+      entry.isTemporary
+        ? "Add a Clean Plate for your trace for reliable erasure."
+        : `Add ${entry.id} — ${entry.title} for reliable erasure.`,
       document.createElement("br"),
       "Current background is a local estimate."
     );
@@ -309,6 +427,11 @@ function enterTrace(entry) {
   hideIndexPreview();
   activeEntry = entry;
   updateTraceMetadata(entry);
+  if (entry.isTemporary) {
+    erasing = false;
+    eraseButton.setAttribute("aria-pressed", "false");
+    eraseButton.textContent = "Erase Brush";
+  }
   prepareTraceEntry();
   loadImage(entry);
   if (transitionDuration() === 0) {
@@ -349,6 +472,7 @@ function returnToIndex() {
     traceView.hidden = true;
     traceView.setAttribute("aria-hidden", "true");
     traceView.classList.remove("is-visible", "is-leaving");
+    releaseTemporaryEntry();
     viewTransitioning = false;
     return;
   }
@@ -364,8 +488,58 @@ function returnToIndex() {
     traceView.setAttribute("aria-hidden", "true");
     traceView.classList.remove("is-visible", "is-leaving");
     indexView.classList.remove("is-entering", "is-visible");
+    releaseTemporaryEntry();
     viewTransitioning = false;
   }, transitionDuration());
+}
+
+function revokeActiveTemporaryUrl() {
+  if (!activeTemporaryUrl) return;
+  URL.revokeObjectURL(activeTemporaryUrl);
+  activeTemporaryUrl = null;
+}
+
+function releaseTemporaryEntry() {
+  if (!activeEntry || !activeEntry.isTemporary) return;
+
+  imageLoadGeneration += 1;
+  revokeActiveTemporaryUrl();
+  const temporaryMask = masksByEntry.get(activeEntry.id);
+  if (temporaryMask) {
+    masksByEntry.delete(activeEntry.id);
+    if (maskCanvas === temporaryMask) {
+      maskCanvas = document.createElement("canvas");
+      maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+    }
+  }
+  activeEntry = null;
+  imageReady = false;
+  cleanPlateReady = false;
+  image = new Image();
+  cleanPlateImage = new Image();
+  sourcePixels = undefined;
+  animationTiles = [];
+  animationTilePixels = undefined;
+  animationTileColors = undefined;
+  mosaicFramesReady = false;
+  [
+    canvas,
+    sourceCanvas,
+    mosaicCanvas,
+    coarseMosaicCanvas,
+    animationTilesCanvas,
+    tileMaskCanvas,
+    effectCanvas,
+    maskedEffectCanvas,
+    reconstructionCanvas,
+    selectionCanvas
+  ].forEach((surface) => {
+    surface.width = 0;
+    surface.height = 0;
+  });
+  cleanPlateNote.textContent = "";
+  errorMessage.hidden = true;
+  setImageUnavailable();
 }
 
 function prepareTraceEntry() {
@@ -1088,7 +1262,55 @@ clearMaskButton.addEventListener("click", () => {
 window.addEventListener("resize", resizeCanvas);
 
 backToIndex.addEventListener("click", returnToIndex);
+indexEntries.addEventListener("wheel", handleIndexWheel, { passive: false });
+
+uploadButton.addEventListener("click", () => {
+  uploadStatus.hidden = true;
+  uploadStatus.textContent = "";
+  uploadInput.click();
+});
+
+uploadInput.addEventListener("change", () => {
+  const file = uploadInput.files[0];
+  uploadInput.value = "";
+  if (!file) return;
+
+  uploadStatus.hidden = true;
+  uploadStatus.textContent = "";
+  if (!supportedUploadTypes.has(file.type.toLowerCase())) {
+    uploadStatus.textContent = "Choose a JPEG, PNG, or WebP image.";
+    uploadStatus.hidden = false;
+    return;
+  }
+
+  let objectUrl;
+  try {
+    objectUrl = URL.createObjectURL(file);
+  } catch (error) {
+    console.error("Unable to create a temporary URL for the selected image.", error);
+    uploadStatus.textContent = "This image could not be opened. Choose another JPEG, PNG, or WebP image.";
+    uploadStatus.hidden = false;
+    return;
+  }
+
+  revokeActiveTemporaryUrl();
+  activeTemporaryUrl = objectUrl;
+  uploadStatus.hidden = true;
+  uploadStatus.textContent = "";
+  enterTrace({
+    id: `temporary-${++temporaryEntrySequence}`,
+    title: "YOUR TRACE",
+    location: "",
+    imagePath: objectUrl,
+    isTemporary: true
+  });
+});
+
+window.addEventListener("pagehide", revokeActiveTemporaryUrl);
 
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(resizeCanvas).observe(frame);
+  new ResizeObserver(updateIndexDirectoryLoopLayout).observe(indexEntries);
+} else {
+  window.addEventListener("resize", updateIndexDirectoryLoopLayout);
 }
